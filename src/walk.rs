@@ -87,10 +87,10 @@ pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Options>) -> 
         let config_dir_op = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .filter(|p| p.is_absolute())
-            .or_else(|| dirs::home_dir().map(|d| d.join(".config")));
+            .or_else(|| dirs_next::home_dir().map(|d| d.join(".config")));
 
         #[cfg(not(target_os = "macos"))]
-        let config_dir_op = dirs::config_dir();
+        let config_dir_op = dirs_next::config_dir();
 
         if let Some(global_ignore_file) = config_dir_op
             .map(|p| p.join("fd").join("ignore"))
@@ -358,19 +358,27 @@ fn spawn_senders(
                         DirEntry::BrokenSymlink(path)
                     }
                     _ => {
-                        tx_thread
-                            .send(WorkerResult::Error(ignore::Error::WithPath {
-                                path,
-                                err: inner_err,
-                            }))
-                            .unwrap();
-                        return ignore::WalkState::Continue;
+                        match tx_thread.send(WorkerResult::Error(ignore::Error::WithPath {
+                            path,
+                            err: inner_err,
+                        })) {
+                            Ok(_) => {
+                                return ignore::WalkState::Continue;
+                            }
+                            Err(_) => {
+                                return ignore::WalkState::Quit;
+                            }
+                        }
                     }
                 },
-                Err(err) => {
-                    tx_thread.send(WorkerResult::Error(err)).unwrap();
-                    return ignore::WalkState::Continue;
-                }
+                Err(err) => match tx_thread.send(WorkerResult::Error(err)) {
+                    Ok(_) => {
+                        return ignore::WalkState::Continue;
+                    }
+                    Err(_) => {
+                        return ignore::WalkState::Quit;
+                    }
+                },
             };
 
             if let Some(min_depth) = config.min_depth {
@@ -492,6 +500,11 @@ fn spawn_senders(
 
             if send_result.is_err() {
                 return ignore::WalkState::Quit;
+            }
+
+            // Apply pruning.
+            if config.prune {
+                return ignore::WalkState::Skip;
             }
 
             ignore::WalkState::Continue

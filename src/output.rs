@@ -4,14 +4,13 @@ use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use ansi_term;
 use lscolors::{LsColors, Style};
 
 use crate::exit_codes::ExitCode;
 use crate::filesystem::strip_current_dir;
 use crate::options::Options;
 
-pub fn replace_path_separator(path: &str, new_path_separator: &str) -> String {
+fn replace_path_separator(path: &str, new_path_separator: &str) -> String {
     path.replace(std::path::MAIN_SEPARATOR, &new_path_separator)
 }
 

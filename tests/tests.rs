@@ -758,6 +758,40 @@ fn test_exact_depth() {
     );
 }
 
+/// Pruning (--prune)
+#[test]
+fn test_prune() {
+    let dirs = &["foo/bar", "bar/foo", "baz"];
+    let files = &[
+        "foo/foo.file",
+        "foo/bar/foo.file",
+        "bar/foo.file",
+        "bar/foo/foo.file",
+        "baz/foo.file",
+    ];
+
+    let te = TestEnv::new(dirs, files);
+
+    te.assert_output(
+        &["foo"],
+        "foo
+        foo/foo.file
+        foo/bar/foo.file
+        bar/foo.file
+        bar/foo
+        bar/foo/foo.file
+        baz/foo.file",
+    );
+
+    te.assert_output(
+        &["--prune", "foo"],
+        "foo
+        bar/foo
+        bar/foo.file
+        baz/foo.file",
+    );
+}
+
 /// Absolute paths (--absolute-path)
 #[test]
 fn test_absolute_path() {
@@ -980,6 +1014,34 @@ fn test_extension() {
     let te4 = TestEnv::new(&[], &[".hidden", "test.hidden"]);
 
     te4.assert_output(&["--hidden", "--extension", ".hidden"], "test.hidden");
+}
+
+/// No file extension (test for the pattern provided in the --help text)
+#[test]
+fn test_no_extension() {
+    let te = TestEnv::new(
+        DEFAULT_DIRS,
+        &["a.foo", "aa", "one/b.foo", "one/bb", "one/two/three/d"],
+    );
+
+    te.assert_output(
+        &["^[^.]+$"],
+        "aa
+        one
+        one/bb
+        one/two
+        one/two/three
+        one/two/three/d
+        one/two/three/directory_foo
+        symlink",
+    );
+
+    te.assert_output(
+        &["^[^.]+$", "--type", "file"],
+        "aa
+        one/bb
+        one/two/three/d",
+    );
 }
 
 /// Symlink as search directory
@@ -1275,6 +1337,85 @@ fn test_exec_batch() {
     }
 }
 
+/// Shell script execution (--exec) with a custom --path-separator
+#[test]
+fn test_exec_with_separator() {
+    let (te, abs_path) = get_test_env_with_abs_path(DEFAULT_DIRS, DEFAULT_FILES);
+    te.assert_output(
+        &[
+            "--path-separator=#",
+            "--absolute-path",
+            "foo",
+            "--exec",
+            "echo",
+        ],
+        &format!(
+            "{abs_path}#a.foo
+                {abs_path}#one#b.foo
+                {abs_path}#one#two#C.Foo2
+                {abs_path}#one#two#c.foo
+                {abs_path}#one#two#three#d.foo
+                {abs_path}#one#two#three#directory_foo",
+            abs_path = abs_path.replace(std::path::MAIN_SEPARATOR, "#"),
+        ),
+    );
+
+    te.assert_output(
+        &["--path-separator=#", "foo", "--exec", "echo", "{}"],
+        "a.foo
+            one#b.foo
+            one#two#C.Foo2
+            one#two#c.foo
+            one#two#three#d.foo
+            one#two#three#directory_foo",
+    );
+
+    te.assert_output(
+        &["--path-separator=#", "foo", "--exec", "echo", "{.}"],
+        "a
+            one#b
+            one#two#C
+            one#two#c
+            one#two#three#d
+            one#two#three#directory_foo",
+    );
+
+    te.assert_output(
+        &["--path-separator=#", "foo", "--exec", "echo", "{/}"],
+        "a.foo
+            b.foo
+            C.Foo2
+            c.foo
+            d.foo
+            directory_foo",
+    );
+
+    te.assert_output(
+        &["--path-separator=#", "foo", "--exec", "echo", "{/.}"],
+        "a
+            b
+            C
+            c
+            d
+            directory_foo",
+    );
+
+    te.assert_output(
+        &["--path-separator=#", "foo", "--exec", "echo", "{//}"],
+        ".
+            one
+            one#two
+            one#two
+            one#two#three
+            one#two#three",
+    );
+
+    te.assert_output(
+        &["--path-separator=#", "e1", "--exec", "printf", "%s.%s\n"],
+        "e1 e2.",
+    );
+}
+
 /// Literal search (--fixed-strings)
 #[test]
 fn test_fixed_strings() {
@@ -1353,6 +1494,9 @@ fn test_size() {
 
     // Zero sized files.
     te.assert_output(&["", "--size", "-0B"], "0_bytes.foo");
+    te.assert_output(&["", "--size", "0B"], "0_bytes.foo");
+    te.assert_output(&["", "--size=0B"], "0_bytes.foo");
+    te.assert_output(&["", "-S", "0B"], "0_bytes.foo");
 
     // Files with 2 bytes or more.
     te.assert_output(
@@ -1368,6 +1512,9 @@ fn test_size() {
 
     // Files with size between 1 byte and 11 bytes.
     te.assert_output(&["", "--size", "+1B", "--size", "-11B"], "11_bytes.foo");
+
+    // Files with size equal 11 bytes.
+    te.assert_output(&["", "--size", "11B"], "11_bytes.foo");
 
     // Files with size between 1 byte and 30 bytes.
     te.assert_output(
@@ -1400,6 +1547,7 @@ fn test_size() {
 
     // Files with size equal 4 kibibytes.
     te.assert_output(&["", "--size", "+4ki", "--size", "-4ki"], "4_kibibytes.foo");
+    te.assert_output(&["", "--size", "4ki"], "4_kibibytes.foo");
 }
 
 #[cfg(test)]
@@ -1610,4 +1758,38 @@ fn test_list_details() {
 
     // Make sure we can execute 'fd --list-details' without any errors.
     te.assert_success_and_get_output(".", &["--list-details"]);
+}
+
+/// Make sure that fd fails if numeric arguments can not be parsed
+#[test]
+fn test_number_parsing_errors() {
+    let te = TestEnv::new(&[], &[]);
+
+    te.assert_failure(&["--threads=a"]);
+    te.assert_failure(&["-j", ""]);
+    te.assert_failure(&["--threads=0"]);
+
+    te.assert_failure(&["--min-depth=a"]);
+    te.assert_failure(&["--max-depth=a"]);
+    te.assert_failure(&["--maxdepth=a"]);
+    te.assert_failure(&["--exact-depth=a"]);
+
+    te.assert_failure(&["--max-buffer-time=a"]);
+
+    te.assert_failure(&["--max-results=a"]);
+}
+
+/// Print error if search pattern starts with a dot and --hidden is not set
+/// (Unix only, hidden files on Windows work differently)
+#[test]
+#[cfg(unix)]
+fn test_error_if_hidden_not_set_and_pattern_starts_with_dot() {
+    let te = TestEnv::new(&[], &[".gitignore", ".whatever", "non-hidden"]);
+
+    te.assert_failure(&["^\\.gitignore"]);
+    te.assert_failure(&["--glob", ".gitignore"]);
+
+    te.assert_output(&["--hidden", "^\\.gitignore"], ".gitignore");
+    te.assert_output(&["--hidden", "--glob", ".gitignore"], ".gitignore");
+    te.assert_output(&[".gitignore"], "");
 }

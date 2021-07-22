@@ -1,9 +1,48 @@
 # Upcoming release
 
 ## Features
+
 ## Bugfixes
+
+- Set default path separator to `/` in MSYS, see #537 and #730 (@aswild)
+
 ## Changes
+
+- Apply custom `--path-separator` to commands run with `--exec(-batch)` and `--list-details`, see #697 (@aswild)
+
 ## Other
+
+- Many documentation updates
+
+# v8.2.1
+
+No functional changes with respect to v8.2.0. Bugfix in the release process.
+
+# v8.2.0
+
+## Features
+
+- Add new `--prune` flag, see #535 (@reima)
+- Improved the usability of the time-based options, see #624 and #645 (@gorogoroumaru)
+- Add support for exact file sizes in the `--size` filter, see #669 and #696 (@Rogach)
+- `fd` now prints an error message if the search pattern requires a leading dot but
+  `--hidden` is not enabled (Unix only), see #615
+
+## Bugfixes
+
+- Avoid panic when performing limited searches in directories with restricted permissions, see #678
+- Invalid numeric command-line arguments are silently ignored, see #675
+- Disable jemalloc on Android, see #662
+- The `--help` text will be colorless if `NO_COLOR` has been set, see #600 (@xanonid)
+
+## Changes
+
+- If `LS_COLORS` is not set (e.g. on Windows), we now provide a more comprehensive default which
+  includes much more filetypes, see #604 and #682 (mjsir911).
+
+## Other
+
+- Added `zsh` completion files, see #654 and #189 (@smancill)
 
 # v8.1.1
 

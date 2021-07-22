@@ -16,7 +16,7 @@ fn main() {
         }
     }
 
-    let var = std::env::var_os("SHELL_COMPLETIONS_DIR").or(std::env::var_os("OUT_DIR"));
+    let var = std::env::var_os("SHELL_COMPLETIONS_DIR").or_else(|| std::env::var_os("OUT_DIR"));
     let outdir = match var {
         None => return,
         Some(outdir) => outdir,
@@ -26,6 +26,5 @@ fn main() {
     let mut app = build_app();
     app.gen_completions("fd", Shell::Bash, &outdir);
     app.gen_completions("fd", Shell::Fish, &outdir);
-    app.gen_completions("fd", Shell::Zsh, &outdir);
     app.gen_completions("fd", Shell::PowerShell, &outdir);
 }

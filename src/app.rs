@@ -1,10 +1,16 @@
 use clap::{crate_version, App, AppSettings, Arg};
 
 pub fn build_app() -> App<'static, 'static> {
+    let clap_color_setting = if std::env::var_os("NO_COLOR").is_none() {
+        AppSettings::ColoredHelp
+    } else {
+        AppSettings::ColorNever
+    };
+
     let mut app = App::new("fd")
         .version(crate_version!())
         .usage("fd [FLAGS/OPTIONS] [<pattern>] [<path>...]")
-        .setting(AppSettings::ColoredHelp)
+        .setting(clap_color_setting)
         .setting(AppSettings::DeriveDisplayOrder)
         .after_help(
             "Note: `fd -h` prints a short and concise overview while `fd --help` gives all \
@@ -111,7 +117,9 @@ pub fn build_app() -> App<'static, 'static> {
                 .overrides_with("fixed-strings")
                 .hidden_short_help(true)
                 .long_help(
-                    "Treat the pattern as a literal string instead of a regular expression.",
+                    "Treat the pattern as a literal string instead of a regular expression. Note \
+                     that this also performs substring comparison. If you want to match on an \
+                     exact filename, consider using '--glob'.",
                 ),
         )
         .arg(
@@ -167,6 +175,7 @@ pub fn build_app() -> App<'static, 'static> {
                 .short("0")
                 .overrides_with("print0")
                 .conflicts_with("list-details")
+                .hidden_short_help(true)
                 .help("Separate results by the null character")
                 .long_help(
                     "Separate search results by the null character (instead of newlines). \
@@ -214,6 +223,13 @@ pub fn build_app() -> App<'static, 'static> {
                     "Only show search results at the exact given depth. This is an alias for \
                      '--min-depth <depth> --max-depth <depth>'.",
                 ),
+        )
+        .arg(
+            Arg::with_name("prune")
+                .long("prune")
+                .conflicts_with_all(&["size", "exact-depth"])
+                .hidden_short_help(true)
+                .long_help("Do not traverse into matching directories.")
         )
         .arg(
             Arg::with_name("file-type")
@@ -266,7 +282,9 @@ pub fn build_app() -> App<'static, 'static> {
                 .help("Filter by file extension")
                 .long_help(
                     "(Additionally) filter search results by their file extension. Multiple \
-                         allowable file extensions can be specified.",
+                     allowable file extensions can be specified.\n\
+                     If you want to search for files without extension, \
+                     you can use the regex '^[^.]+$' as a normal search pattern.",
                 ),
         )
         .arg(
@@ -280,7 +298,7 @@ pub fn build_app() -> App<'static, 'static> {
                 .conflicts_with("list-details")
                 .help("Execute a command for each search result")
                 .long_help(
-                    "Execute a command for each search result.\n\
+                    "Execute a command for each search result in parallel (use --threads=1 for sequential command execution).\n\
                      All arguments following --exec are taken to be arguments to the command until the \
                      argument ';' is encountered.\n\
                      Each occurrence of the following placeholders is substituted by a path derived from the \
@@ -327,7 +345,10 @@ pub fn build_app() -> App<'static, 'static> {
                 .long_help(
                     "Exclude files/directories that match the given glob pattern. This \
                          overrides any other ignore logic. Multiple exclude patterns can be \
-                         specified.",
+                         specified.\n\n\
+                         Examples:\n  \
+                           --exclude '*.pyc'\n  \
+                           --exclude node_modules",
                 ),
         )
         .arg(
@@ -383,7 +404,8 @@ pub fn build_app() -> App<'static, 'static> {
                 .long_help(
                     "Limit results based on the size of files using the format <+-><NUM><UNIT>.\n   \
                         '+': file size must be greater than or equal to this\n   \
-                        '-': file size must be less than or equal to this\n   \
+                        '-': file size must be less than or equal to this\n\
+                     If neither '+' nor '-' is specified, file size must be exactly equal to this.\n   \
                         'NUM':  The numeric size (e.g. 500)\n   \
                         'UNIT': The units for NUM. They are not case-sensitive.\n\
                      Allowed unit values:\n    \
@@ -412,6 +434,7 @@ pub fn build_app() -> App<'static, 'static> {
             Arg::with_name("changed-within")
                 .long("changed-within")
                 .alias("change-newer-than")
+                .alias("newer")
                 .takes_value(true)
                 .value_name("date|dur")
                 .number_of_values(1)
@@ -419,16 +442,19 @@ pub fn build_app() -> App<'static, 'static> {
                 .long_help(
                     "Filter results based on the file modification time. The argument can be provided \
                      as a specific point in time (YYYY-MM-DD HH:MM:SS) or as a duration (10h, 1d, 35min). \
-                     '--change-newer-than' can be used as an alias.\n\
+                     If the time is not specified, it defaults to 00:00:00. \
+                     '--change-newer-than' or '--newer' can be used as aliases.\n\
                      Examples:\n    \
                          --changed-within 2weeks\n    \
-                         --change-newer-than '2018-10-27 10:00:00'",
+                         --change-newer-than '2018-10-27 10:00:00'\n    \
+                         --newer 2018-10-27",
                 ),
         )
         .arg(
             Arg::with_name("changed-before")
                 .long("changed-before")
                 .alias("change-older-than")
+                .alias("older")
                 .takes_value(true)
                 .value_name("date|dur")
                 .number_of_values(1)
@@ -436,10 +462,11 @@ pub fn build_app() -> App<'static, 'static> {
                 .long_help(
                     "Filter results based on the file modification time. The argument can be provided \
                      as a specific point in time (YYYY-MM-DD HH:MM:SS) or as a duration (10h, 1d, 35min). \
-                     '--change-older-than' can be used as an alias.\n\
+                     '--change-older-than' or '--older' can be used as aliases.\n\
                      Examples:\n    \
                          --changed-before '2018-10-27 10:00:00'\n    \
-                         --change-older-than 2weeks",
+                         --change-older-than 2weeks\n    \
+                         --older 2018-10-27",
                 ),
         )
         .arg(
@@ -483,7 +510,7 @@ pub fn build_app() -> App<'static, 'static> {
                 .number_of_values(1)
                 .hidden_short_help(true)
                 .long_help(
-                    "Change the current working directory of fd to the provided path. The \
+                    "Change the current working directory of fd to the provided path. This \
                          means that search results will be shown with respect to the given base \
                          path. Note that relative paths which are passed to fd via the positional \
                          <path> argument or the '--search-path' option will also be resolved \
@@ -492,8 +519,12 @@ pub fn build_app() -> App<'static, 'static> {
         )
         .arg(
             Arg::with_name("pattern").help(
-                "the search pattern - a regular expression unless '--glob' is used (optional)",
-            ),
+                "the search pattern (a regular expression, unless '--glob' is used; optional)",
+            ).long_help(
+                "the search pattern which is either a regular expression (default) or a glob \
+                 pattern (if --glob is used). If no pattern has been specified, every entry \
+                 is considered a match. If your pattern starts with a dash (-), make sure to \
+                 pass '--' first, or it will be considered as a flag (fd -- '-foo').")
         )
         .arg(
             Arg::with_name("path-separator")
