@@ -10,11 +10,10 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::exit_codes::ExitCode;
-use crate::filesystem::strip_current_dir;
 
 use self::command::execute_command;
 use self::input::{basename, dirname, remove_extension};
@@ -72,9 +71,8 @@ impl CommandTemplate {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        lazy_static! {
-            static ref PLACEHOLDER_PATTERN: Regex = Regex::new(r"\{(/?\.?|//)\}").unwrap();
-        }
+        static PLACEHOLDER_PATTERN: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"\{(/?\.?|//)\}").unwrap());
 
         let mut args = Vec::new();
         let mut has_placeholder = false;
@@ -139,22 +137,25 @@ impl CommandTemplate {
     ///
     /// Using the internal `args` field, and a supplied `input` variable, a `Command` will be
     /// build. Once all arguments have been processed, the command is executed.
-    pub fn generate_and_execute(&self, input: &Path, out_perm: Arc<Mutex<()>>) -> ExitCode {
-        let input = strip_current_dir(input);
-
+    pub fn generate_and_execute(
+        &self,
+        input: &Path,
+        out_perm: Arc<Mutex<()>>,
+        buffer_output: bool,
+    ) -> ExitCode {
         let mut cmd = Command::new(self.args[0].generate(&input, self.path_separator.as_deref()));
         for arg in &self.args[1..] {
             cmd.arg(arg.generate(&input, self.path_separator.as_deref()));
         }
 
-        execute_command(cmd, &out_perm)
+        execute_command(cmd, &out_perm, buffer_output)
     }
 
     pub fn in_batch_mode(&self) -> bool {
         self.mode == ExecutionMode::Batch
     }
 
-    pub fn generate_and_execute_batch<I>(&self, paths: I) -> ExitCode
+    pub fn generate_and_execute_batch<I>(&self, paths: I, buffer_output: bool) -> ExitCode
     where
         I: Iterator<Item = PathBuf>,
     {
@@ -173,7 +174,7 @@ impl CommandTemplate {
                 // A single `Tokens` is expected
                 // So we can directly consume the iterator once and for all
                 for path in &mut paths {
-                    cmd.arg(arg.generate(strip_current_dir(path), self.path_separator.as_deref()));
+                    cmd.arg(arg.generate(path, self.path_separator.as_deref()));
                     has_path = true;
                 }
             } else {
@@ -182,7 +183,7 @@ impl CommandTemplate {
         }
 
         if has_path {
-            execute_command(cmd, &Mutex::new(()))
+            execute_command(cmd, &Mutex::new(()), buffer_output)
         } else {
             ExitCode::Success
         }
@@ -201,10 +202,7 @@ enum ArgumentTemplate {
 
 impl ArgumentTemplate {
     pub fn has_tokens(&self) -> bool {
-        match self {
-            ArgumentTemplate::Tokens(_) => true,
-            _ => false,
-        }
+        matches!(self, ArgumentTemplate::Tokens(_))
     }
 
     /// Generate an argument from this template. If path_separator is Some, then it will replace
@@ -448,11 +446,11 @@ mod tests {
         // This is uncommon, but valid
         check!(r"C:foo\bar", "C:foo#bar");
 
-        // forward slashses should get normalized and interpreted as separators
+        // forward slashes should get normalized and interpreted as separators
         check!("C:/foo/bar", "C:#foo#bar");
         check!("C:foo/bar", "C:foo#bar");
 
-        // Rust does not intrepret "//server/share" as a UNC path, but rather as a normal
+        // Rust does not interpret "//server/share" as a UNC path, but rather as a normal
         // absolute path that begins with RootDir, and the two slashes get combined together as
         // a single path separator during normalization.
         //check!("//server/share/path", "##server#share#path");

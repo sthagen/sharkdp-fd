@@ -16,6 +16,7 @@ pub fn job(
     cmd: Arc<CommandTemplate>,
     out_perm: Arc<Mutex<()>>,
     show_filesystem_errors: bool,
+    buffer_output: bool,
 ) -> ExitCode {
     let mut results: Vec<ExitCode> = Vec::new();
     loop {
@@ -25,7 +26,7 @@ pub fn job(
         // Obtain the next result from the receiver, else if the channel
         // has closed, exit from the loop
         let value: PathBuf = match lock.recv() {
-            Ok(WorkerResult::Entry(val)) => val,
+            Ok(WorkerResult::Entry(path)) => path,
             Ok(WorkerResult::Error(err)) => {
                 if show_filesystem_errors {
                     print_error(err.to_string());
@@ -38,19 +39,21 @@ pub fn job(
         // Drop the lock so that other threads can read from the receiver.
         drop(lock);
         // Generate a command, execute it and store its exit code.
-        results.push(cmd.generate_and_execute(&value, Arc::clone(&out_perm)))
+        results.push(cmd.generate_and_execute(&value, Arc::clone(&out_perm), buffer_output))
     }
     // Returns error in case of any error.
-    merge_exitcodes(&results)
+    merge_exitcodes(results)
 }
 
 pub fn batch(
     rx: Receiver<WorkerResult>,
     cmd: &CommandTemplate,
     show_filesystem_errors: bool,
+    buffer_output: bool,
+    limit: usize,
 ) -> ExitCode {
     let paths = rx.iter().filter_map(|value| match value {
-        WorkerResult::Entry(val) => Some(val),
+        WorkerResult::Entry(path) => Some(path),
         WorkerResult::Error(err) => {
             if show_filesystem_errors {
                 print_error(err.to_string());
@@ -58,5 +61,17 @@ pub fn batch(
             None
         }
     });
-    cmd.generate_and_execute_batch(paths)
+    if limit == 0 {
+        // no limit
+        return cmd.generate_and_execute_batch(paths, buffer_output);
+    }
+
+    let mut exit_codes = Vec::new();
+    let mut peekable = paths.peekable();
+    while peekable.peek().is_some() {
+        let limited = peekable.by_ref().take(limit);
+        let exit_code = cmd.generate_and_execute_batch(limited, buffer_output);
+        exit_codes.push(exit_code);
+    }
+    merge_exitcodes(exit_codes)
 }

@@ -7,6 +7,8 @@ use std::io;
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+use normpath::PathExt;
+
 use crate::walk;
 
 pub fn path_absolute_form(path: &Path) -> io::Result<PathBuf> {
@@ -33,10 +35,10 @@ pub fn absolute_path(path: &Path) -> io::Result<PathBuf> {
     Ok(path_buf)
 }
 
-// Path::is_dir() is not guaranteed to be intuitively correct for "." and ".."
-// See: https://github.com/rust-lang/rust/issues/45302
-pub fn is_dir(path: &Path) -> bool {
-    path.is_dir() && (path.file_name().is_some() || path.canonicalize().is_ok())
+pub fn is_existing_directory(path: &Path) -> bool {
+    // Note: we do not use `.exists()` here, as `.` always exists, even if
+    // the CWD has been deleted.
+    path.is_dir() && (path.file_name().is_some() || path.normalize().is_ok())
 }
 
 #[cfg(any(unix, target_os = "redox"))]
@@ -68,22 +70,22 @@ pub fn is_empty(entry: &walk::DirEntry) -> bool {
 }
 
 #[cfg(any(unix, target_os = "redox"))]
-pub fn is_socket(ft: &fs::FileType) -> bool {
+pub fn is_socket(ft: fs::FileType) -> bool {
     ft.is_socket()
 }
 
 #[cfg(windows)]
-pub fn is_socket(_: &fs::FileType) -> bool {
+pub fn is_socket(_: fs::FileType) -> bool {
     false
 }
 
 #[cfg(any(unix, target_os = "redox"))]
-pub fn is_pipe(ft: &fs::FileType) -> bool {
+pub fn is_pipe(ft: fs::FileType) -> bool {
     ft.is_fifo()
 }
 
 #[cfg(windows)]
-pub fn is_pipe(_: &fs::FileType) -> bool {
+pub fn is_pipe(_: fs::FileType) -> bool {
     false
 }
 

@@ -1,25 +1,25 @@
-use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fs::{FileType, Metadata};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
+use std::{borrow::Cow, io::Write};
 
 use anyhow::{anyhow, Result};
 use ignore::overrides::OverrideBuilder;
 use ignore::{self, WalkBuilder};
+use once_cell::unsync::OnceCell;
 use regex::bytes::Regex;
 
+use crate::config::Config;
 use crate::error::print_error;
 use crate::exec;
 use crate::exit_codes::{merge_exitcodes, ExitCode};
 use crate::filesystem;
-use crate::options::Options;
 use crate::output;
 
 /// The receiver thread can either be buffering results or directly streaming to the console.
@@ -40,13 +40,15 @@ pub enum WorkerResult {
 
 /// Maximum size of the output buffer before flushing results to the console
 pub const MAX_BUFFER_LENGTH: usize = 1000;
+/// Default duration until output buffering switches to streaming.
+pub const DEFAULT_MAX_BUFFER_TIME: time::Duration = time::Duration::from_millis(100);
 
 /// Recursively scan the given search path for files / pathnames matching the pattern.
 ///
 /// If the `--exec` argument was supplied, this will create a thread pool for executing
 /// jobs in parallel from a given command line and the discovered paths. Otherwise, each
 /// path will simply be written to standard output.
-pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Options>) -> Result<ExitCode> {
+pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Config>) -> Result<ExitCode> {
     let mut path_iter = path_vec.iter();
     let first_path_buf = path_iter
         .next()
@@ -68,7 +70,7 @@ pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Options>) -> 
     walker
         .hidden(config.ignore_hidden)
         .ignore(config.read_fdignore)
-        .parents(config.read_fdignore || config.read_vcsignore)
+        .parents(config.read_parent_ignore)
         .git_ignore(config.read_vcsignore)
         .git_global(config.read_vcsignore)
         .git_exclude(config.read_vcsignore)
@@ -134,11 +136,9 @@ pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Options>) -> 
     if config.ls_colors.is_some() && config.command.is_none() {
         let wq = Arc::clone(&wants_to_quit);
         ctrlc::set_handler(move || {
-            if wq.load(Ordering::Relaxed) {
+            if wq.fetch_or(true, Ordering::Relaxed) {
                 // Ctrl-C has been pressed twice, exit NOW
-                process::exit(ExitCode::KilledBySigint.into());
-            } else {
-                wq.store(true, Ordering::Relaxed);
+                ExitCode::KilledBySigint.exit();
             }
         })
         .unwrap();
@@ -161,7 +161,7 @@ pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Options>) -> 
 }
 
 fn spawn_receiver(
-    config: &Arc<Options>,
+    config: &Arc<Config>,
     wants_to_quit: &Arc<AtomicBool>,
     rx: Receiver<WorkerResult>,
 ) -> thread::JoinHandle<ExitCode> {
@@ -170,12 +170,19 @@ fn spawn_receiver(
 
     let show_filesystem_errors = config.show_filesystem_errors;
     let threads = config.threads;
-
+    // This will be used to check if output should be buffered when only running a single thread
+    let enable_output_buffering: bool = threads > 1;
     thread::spawn(move || {
         // This will be set to `Some` if the `--exec` argument was supplied.
         if let Some(ref cmd) = config.command {
             if cmd.in_batch_mode() {
-                exec::batch(rx, cmd, show_filesystem_errors)
+                exec::batch(
+                    rx,
+                    cmd,
+                    show_filesystem_errors,
+                    enable_output_buffering,
+                    config.batch_size,
+                )
             } else {
                 let shared_rx = Arc::new(Mutex::new(rx));
 
@@ -189,71 +196,91 @@ fn spawn_receiver(
                     let out_perm = Arc::clone(&out_perm);
 
                     // Spawn a job thread that will listen for and execute inputs.
-                    let handle =
-                        thread::spawn(move || exec::job(rx, cmd, out_perm, show_filesystem_errors));
+                    let handle = thread::spawn(move || {
+                        exec::job(
+                            rx,
+                            cmd,
+                            out_perm,
+                            show_filesystem_errors,
+                            enable_output_buffering,
+                        )
+                    });
 
                     // Push the handle of the spawned thread into the vector for later joining.
                     handles.push(handle);
                 }
 
                 // Wait for all threads to exit before exiting the program.
-                let mut results: Vec<ExitCode> = Vec::new();
-                for h in handles {
-                    results.push(h.join().unwrap());
-                }
-
-                merge_exitcodes(&results)
+                let exit_codes = handles
+                    .into_iter()
+                    .map(|handle| handle.join().unwrap())
+                    .collect::<Vec<_>>();
+                merge_exitcodes(exit_codes)
             }
         } else {
             let start = time::Instant::now();
-
-            let mut buffer = vec![];
 
             // Start in buffering mode
             let mut mode = ReceiverMode::Buffering;
 
             // Maximum time to wait before we start streaming to the console.
-            let max_buffer_time = config
-                .max_buffer_time
-                .unwrap_or_else(|| time::Duration::from_millis(100));
+            let max_buffer_time = config.max_buffer_time.unwrap_or(DEFAULT_MAX_BUFFER_TIME);
 
             let stdout = io::stdout();
-            let mut stdout = stdout.lock();
+            let stdout = stdout.lock();
+            let mut stdout = io::BufWriter::new(stdout);
 
             let mut num_results = 0;
-
+            let is_interactive = config.interactive_terminal;
+            let mut buffer = Vec::with_capacity(MAX_BUFFER_LENGTH);
             for worker_result in rx {
                 match worker_result {
-                    WorkerResult::Entry(value) => {
+                    WorkerResult::Entry(path) => {
+                        if config.quiet {
+                            return ExitCode::HasResults(true);
+                        }
+
                         match mode {
                             ReceiverMode::Buffering => {
-                                buffer.push(value);
+                                buffer.push(path);
 
                                 // Have we reached the maximum buffer size or maximum buffering time?
                                 if buffer.len() > MAX_BUFFER_LENGTH
-                                    || time::Instant::now() - start > max_buffer_time
+                                    || start.elapsed() > max_buffer_time
                                 {
                                     // Flush the buffer
-                                    for v in &buffer {
+                                    for path in &buffer {
                                         output::print_entry(
                                             &mut stdout,
-                                            v,
+                                            path,
                                             &config,
                                             &wants_to_quit,
                                         );
                                     }
                                     buffer.clear();
-
+                                    if is_interactive && stdout.flush().is_err() {
+                                        // Probably a broken pipe. Exit gracefully.
+                                        return ExitCode::GeneralError;
+                                    }
                                     // Start streaming
                                     mode = ReceiverMode::Streaming;
                                 }
                             }
                             ReceiverMode::Streaming => {
-                                output::print_entry(&mut stdout, &value, &config, &wants_to_quit);
+                                output::print_entry(&mut stdout, &path, &config, &wants_to_quit);
+                                if is_interactive && stdout.flush().is_err() {
+                                    // Probably a broken pipe. Exit gracefully.
+                                    return ExitCode::GeneralError;
+                                }
                             }
                         }
 
                         num_results += 1;
+                        if let Some(max_results) = config.max_results {
+                            if num_results >= max_results {
+                                break;
+                            }
+                        }
                     }
                     WorkerResult::Error(err) => {
                         if show_filesystem_errors {
@@ -261,67 +288,82 @@ fn spawn_receiver(
                         }
                     }
                 }
-
-                if let Some(max_results) = config.max_results {
-                    if num_results >= max_results {
-                        break;
-                    }
-                }
             }
 
             // If we have finished fast enough (faster than max_buffer_time), we haven't streamed
             // anything to the console, yet. In this case, sort the results and print them:
-            if !buffer.is_empty() {
-                buffer.sort();
-                for value in buffer {
-                    output::print_entry(&mut stdout, &value, &config, &wants_to_quit);
-                }
+            buffer.sort();
+            for value in buffer {
+                output::print_entry(&mut stdout, &value, &config, &wants_to_quit);
             }
 
-            ExitCode::Success
+            if config.quiet {
+                ExitCode::HasResults(false)
+            } else {
+                ExitCode::Success
+            }
         }
     })
 }
 
-pub enum DirEntry {
+enum DirEntryInner {
     Normal(ignore::DirEntry),
     BrokenSymlink(PathBuf),
 }
 
+pub struct DirEntry {
+    inner: DirEntryInner,
+    metadata: OnceCell<Option<Metadata>>,
+}
+
 impl DirEntry {
+    fn normal(e: ignore::DirEntry) -> Self {
+        Self {
+            inner: DirEntryInner::Normal(e),
+            metadata: OnceCell::new(),
+        }
+    }
+
+    fn broken_symlink(path: PathBuf) -> Self {
+        Self {
+            inner: DirEntryInner::BrokenSymlink(path),
+            metadata: OnceCell::new(),
+        }
+    }
+
     pub fn path(&self) -> &Path {
-        match self {
-            DirEntry::Normal(e) => e.path(),
-            DirEntry::BrokenSymlink(pathbuf) => pathbuf.as_path(),
+        match &self.inner {
+            DirEntryInner::Normal(e) => e.path(),
+            DirEntryInner::BrokenSymlink(pathbuf) => pathbuf.as_path(),
         }
     }
 
     pub fn file_type(&self) -> Option<FileType> {
-        match self {
-            DirEntry::Normal(e) => e.file_type(),
-            DirEntry::BrokenSymlink(pathbuf) => {
-                pathbuf.symlink_metadata().map(|m| m.file_type()).ok()
-            }
+        match &self.inner {
+            DirEntryInner::Normal(e) => e.file_type(),
+            DirEntryInner::BrokenSymlink(_) => self.metadata().map(|m| m.file_type()),
         }
     }
 
-    pub fn metadata(&self) -> Option<Metadata> {
-        match self {
-            DirEntry::Normal(e) => e.metadata().ok(),
-            DirEntry::BrokenSymlink(_) => None,
-        }
+    pub fn metadata(&self) -> Option<&Metadata> {
+        self.metadata
+            .get_or_init(|| match &self.inner {
+                DirEntryInner::Normal(e) => e.metadata().ok(),
+                DirEntryInner::BrokenSymlink(path) => path.symlink_metadata().ok(),
+            })
+            .as_ref()
     }
 
     pub fn depth(&self) -> Option<usize> {
-        match self {
-            DirEntry::Normal(e) => Some(e.depth()),
-            DirEntry::BrokenSymlink(_) => None,
+        match &self.inner {
+            DirEntryInner::Normal(e) => Some(e.depth()),
+            DirEntryInner::BrokenSymlink(_) => None,
         }
     }
 }
 
 fn spawn_senders(
-    config: &Arc<Options>,
+    config: &Arc<Config>,
     wants_to_quit: &Arc<AtomicBool>,
     pattern: Arc<Regex>,
     parallel_walker: ignore::WalkParallel,
@@ -343,7 +385,7 @@ fn spawn_senders(
                     // Skip the root directory entry.
                     return ignore::WalkState::Continue;
                 }
-                Ok(e) => DirEntry::Normal(e),
+                Ok(e) => DirEntry::normal(e),
                 Err(ignore::Error::WithPath {
                     path,
                     err: inner_err,
@@ -355,30 +397,24 @@ fn spawn_senders(
                                 .ok()
                                 .map_or(false, |m| m.file_type().is_symlink()) =>
                     {
-                        DirEntry::BrokenSymlink(path)
+                        DirEntry::broken_symlink(path)
                     }
                     _ => {
-                        match tx_thread.send(WorkerResult::Error(ignore::Error::WithPath {
+                        return match tx_thread.send(WorkerResult::Error(ignore::Error::WithPath {
                             path,
                             err: inner_err,
                         })) {
-                            Ok(_) => {
-                                return ignore::WalkState::Continue;
-                            }
-                            Err(_) => {
-                                return ignore::WalkState::Quit;
-                            }
+                            Ok(_) => ignore::WalkState::Continue,
+                            Err(_) => ignore::WalkState::Quit,
                         }
                     }
                 },
-                Err(err) => match tx_thread.send(WorkerResult::Error(err)) {
-                    Ok(_) => {
-                        return ignore::WalkState::Continue;
+                Err(err) => {
+                    return match tx_thread.send(WorkerResult::Error(err)) {
+                        Ok(_) => ignore::WalkState::Continue,
+                        Err(_) => ignore::WalkState::Quit,
                     }
-                    Err(_) => {
-                        return ignore::WalkState::Quit;
-                    }
-                },
+                }
             };
 
             if let Some(min_depth) = config.min_depth {
@@ -422,27 +458,7 @@ fn spawn_senders(
 
             // Filter out unwanted file types.
             if let Some(ref file_types) = config.file_types {
-                if let Some(ref entry_type) = entry.file_type() {
-                    if (!file_types.files && entry_type.is_file())
-                        || (!file_types.directories && entry_type.is_dir())
-                        || (!file_types.symlinks && entry_type.is_symlink())
-                        || (!file_types.sockets && filesystem::is_socket(entry_type))
-                        || (!file_types.pipes && filesystem::is_pipe(entry_type))
-                        || (file_types.executables_only
-                            && !entry
-                                .metadata()
-                                .map(|m| filesystem::is_executable(&m))
-                                .unwrap_or(false))
-                        || (file_types.empty_only && !filesystem::is_empty(&entry))
-                        || !(entry_type.is_file()
-                            || entry_type.is_dir()
-                            || entry_type.is_symlink()
-                            || filesystem::is_socket(entry_type)
-                            || filesystem::is_pipe(entry_type))
-                    {
-                        return ignore::WalkState::Continue;
-                    }
-                } else {
+                if file_types.should_ignore(&entry) {
                     return ignore::WalkState::Continue;
                 }
             }
@@ -450,8 +466,8 @@ fn spawn_senders(
             #[cfg(unix)]
             {
                 if let Some(ref owner_constraint) = config.owner_constraint {
-                    if let Ok(ref metadata) = entry_path.metadata() {
-                        if !owner_constraint.matches(&metadata) {
+                    if let Some(metadata) = entry.metadata() {
+                        if !owner_constraint.matches(metadata) {
                             return ignore::WalkState::Continue;
                         }
                     } else {
@@ -463,7 +479,7 @@ fn spawn_senders(
             // Filter out unwanted sizes if it is a file and we have been given size constraints.
             if !config.size_constraints.is_empty() {
                 if entry_path.is_file() {
-                    if let Ok(metadata) = entry_path.metadata() {
+                    if let Some(metadata) = entry.metadata() {
                         let file_size = metadata.len();
                         if config
                             .size_constraints
@@ -483,7 +499,7 @@ fn spawn_senders(
             // Filter out unwanted modification times
             if !config.time_constraints.is_empty() {
                 let mut matched = false;
-                if let Ok(metadata) = entry_path.metadata() {
+                if let Some(metadata) = entry.metadata() {
                     if let Ok(modified) = metadata.modified() {
                         matched = config
                             .time_constraints

@@ -1,10 +1,51 @@
 # Upcoming release
 
+## Performance improvements
+
 ## Features
 
 ## Bugfixes
 
+## Changes
+
+## Other
+
+
+
+# v8.3.0
+
+## Performance improvements
+
+- Colorized output is now significantly faster, see #720 and #853 (@tavianator)
+- Writing to stdout is now buffered if the output does not go to a TTY. This increases performance
+  when the output of `fd` is piped to another program or to a file, see #885 (@tmccombs, original
+  implementation by @sourlemon207)
+- File metadata is now cached between the different filters that require it (e.g. `--owner`,
+  `--size`), reducing the number of `stat` syscalls when multiple filters are used; see #863
+  (@tavianator, original implementation by @alexmaco)
+
+## Features
+
+- Don't buffer command output from `--exec` when using a single thread. See #522
+- Add new `-q, --quiet` flag, see #303 (@Asha20)
+- Add new `--no-ignore-parent` flag, see #787 (@will459)
+- Add new `--batch-size` flag, see #410 (@devonhollowood)
+- Add opposing command-line options, see #595 (@Asha20)
+- Add support for more filesystem indicators in `LS_COLORS`, see
+  https://github.com/sharkdp/lscolors/pull/35 (@tavianator)
+
+## Bugfixes
+
+- Always show the `./` prefix for search results unless the output is a TTY or `--strip-cwd-prefix` is set, see #760 and #861 (@jcaplan)
 - Set default path separator to `/` in MSYS, see #537 and #730 (@aswild)
+- fd cannot search files under a RAM disk, see #752
+- fd doesn't show substituted drive on Windows, see #365
+- Properly handle write errors to devices that are full, see #737
+- Use local time zone for time functions (`--change-newer-than`, `--change-older-than`), see #631 (@jacobmischka)
+- Support `--list-details` on more platforms (like BusyBox), see #783
+- The filters `--owner`, `--size`, and `--changed-{within,before}` now apply to symbolic links
+  themselves, rather than the link target, except when `--follow` is specified; see #863
+- Change time comparisons to be exclusive, see #794 (@jacobmischka)
 
 ## Changes
 
@@ -13,6 +54,7 @@
 ## Other
 
 - Many documentation updates
+
 
 # v8.2.1
 
@@ -452,7 +494,7 @@ I'd also like to take this chance to say a special Thank You to a few people tha
 * Add option to force colored output: `--color always`, see #49 (@Detegr)
 * Generate Shell completions for Bash, ZSH, Fish and Powershell, see #64 (@ImbaKnugel)
 * Better & extended `--help` text (@abaez and @Detegr)
-* Proper Windows support, see #70 
+* Proper Windows support, see #70
 
 ## Changes
 
@@ -480,9 +522,9 @@ I'd also like to take this chance to say a special Thank You to a few people tha
 
 * Changed `--sensitive` to `--case-sensitive`
 * Changed `--absolute` to `--absolute-path`
-* Throw an error if root directory is not existent, see #39 
-* Use absolute paths if the root dir is an absolute path, see #40 
-* Handle invalid UTF-8, see #34 #38 
+* Throw an error if root directory is not existent, see #39
+* Use absolute paths if the root dir is an absolute path, see #40
+* Handle invalid UTF-8, see #34 #38
 * Support `-V`, `--version` by switching from `getopts` to `clap`.
 
 Misc:
@@ -490,8 +532,8 @@ Misc:
 
 # v1.1.0
 
-- Windows compatibility (@sebasv), see #29 #35 
-- Safely exit on broken output pipes (e.g.: usage with `head`, `tail`, ..), see #24 
+- Windows compatibility (@sebasv), see #29 #35
+- Safely exit on broken output pipes (e.g.: usage with `head`, `tail`, ..), see #24
 - Backport for rust 1.16, see #23
 
 # v1.0.0
@@ -503,17 +545,17 @@ Misc:
 
 # v0.3.0
 
--  Parse dircolors files, closes #20 
--  Colorize each path component, closes #19 
--  Add short command line option for --hidden, see #18 
+-  Parse dircolors files, closes #20
+-  Colorize each path component, closes #19
+-  Add short command line option for --hidden, see #18
 
 # v0.2.0
 
--  Option to follow symlinks, disable colors, closes #16, closes #17 
+-  Option to follow symlinks, disable colors, closes #16, closes #17
 - `--filename` instead of `--full-path`
--  Option to search hidden directories, closes #12 
--  Configurable search depth, closes #13 
--  Detect interactive terminal, closes #11 
+-  Option to search hidden directories, closes #12
+-  Configurable search depth, closes #13
+-  Detect interactive terminal, closes #11
 
 # v0.1.0
 

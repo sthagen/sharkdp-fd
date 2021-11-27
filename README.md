@@ -1,7 +1,6 @@
 # fd
 
-[![Build Status](https://travis-ci.org/sharkdp/fd.svg?branch=master)](https://travis-ci.org/sharkdp/fd)
-[![Build status](https://ci.appveyor.com/api/projects/status/21c4p5fwggc5gy3j/branch/master?svg=true)](https://ci.appveyor.com/project/sharkdp/fd/branch/master)
+[![CICD](https://github.com/sharkdp/fd/actions/workflows/CICD.yml/badge.svg)](https://github.com/sharkdp/fd/actions/workflows/CICD.yml)
 [![Version info](https://img.shields.io/crates/v/fd-find.svg)](https://crates.io/crates/fd-find)
 [[中文](https://github.com/chinanf-boy/fd-zh)]
 [[한국어](https://github.com/spearkkk/fd-kor)]
@@ -116,6 +115,15 @@ src/lscolors/mod.rs
 tests/testenv/mod.rs
 ```
 
+### Searching for a particular file name
+
+ To find files with exactly the provided search pattern, use the `-g` (or `--glob`) option:
+``` bash
+> fd -g libc.so /usr
+/usr/lib32/libc.so
+/usr/lib/libc.so
+```
+
 ### Hidden and ignored files
 By default, *fd* does not search hidden directories and does not show hidden files in the
 search results. To disable this behavior, we can use the `-H` (or `--hidden`) option:
@@ -136,6 +144,15 @@ target/debug/deps/libnum_cpus-f5ce7ef99006aa05.rlib
 
 To really search *all* files and directories, simply combine the hidden and ignore features to show
 everything (`-HI`).
+
+### Matching the full path
+By default, *fd* only matches the filename of each file. However, using the `--full-path` or `-p` option,
+you can match against the full path.
+
+```bash
+> fd -p -g '**/.git/config'
+> fd -p '.*/lesson-\d+/[a-z]+.(jpg|png)'
+```
 
 ### Command execution
 
@@ -176,6 +193,11 @@ fd … -X ls -lhd --color=always
 ```
 This pattern is so useful that `fd` provides a shortcut. You can use the `-l`/`--list-details`
 option to execute `ls` in this way: `fd … -l`.
+
+The `-X` option is also useful when combining `fd` with [ripgrep](https://github.com/BurntSushi/ripgrep/) (`rg`) in order to search within a certain class of files, like all C++ source files:
+```bash
+fd -e cpp -e cxx -e h -e hpp -X rg 'std::cout'
+```
 
 Convert all `*.jpg` files to `*.png` files:
 ``` bash
@@ -278,8 +300,7 @@ FLAGS:
     -a, --absolute-path     Show absolute instead of relative paths
     -l, --list-details      Use a long listing format with file metadata
     -L, --follow            Follow symbolic links
-    -p, --full-path         Search full path (default: file-/dirname only)
-    -0, --print0            Separate results by the null character
+    -p, --full-path         Search full abs. path (default: filename only)
     -h, --help              Prints help information
     -V, --version           Prints version information
 
@@ -292,12 +313,13 @@ OPTIONS:
     -X, --exec-batch <cmd>             Execute a command with all search results at once
     -E, --exclude <pattern>...         Exclude entries that match the given glob pattern
     -c, --color <when>                 When to use colors: never, *auto*, always
-    -S, --size <size>...               Limit results based on the size of files.
+    -S, --size <size>...               Limit results based on the size of files
         --changed-within <date|dur>    Filter by file modification time (newer than)
         --changed-before <date|dur>    Filter by file modification time (older than)
+    -o, --owner <user:group>           Filter by owning user and/or group
 
 ARGS:
-    <pattern>    the search pattern - a regular expression unless '--glob' is used (optional)
+    <pattern>    the search pattern (a regular expression, unless '--glob' is used; optional)
     <path>...    the root directory for the filesystem search (optional)
 ```
 
@@ -400,6 +422,14 @@ use a character class with a single hyphen character:
 > fd -- '-pattern'
 > fd '[-]pattern'
 ```
+
+### "Command not found" for `alias`es or shell functions
+
+Shell `alias`es and shell functions can not be used for command execution via `fd -x` or
+`fd -X`. In `zsh`, you can make the alias global via `alias -g myalias="…"`. In `bash`,
+you can use `export -f my_function` to make available to child processes. You would still
+need to call `fd -x bash -c 'my_function "$1"' bash`. For other use cases or shells, use
+a (temporary) shell script.
 
 ## Integration with other programs
 
@@ -505,7 +535,7 @@ Make sure that `$HOME/.local/bin` is in your `$PATH`.
 If you use an older version of Ubuntu, you can download the latest `.deb` package from the
 [release page](https://github.com/sharkdp/fd/releases) and install it via:
 ``` bash
-sudo dpkg -i fd_8.2.1_amd64.deb  # adapt version number and architecture
+sudo dpkg -i fd_8.3.0_amd64.deb  # adapt version number and architecture
 ```
 
 ### On Debian
@@ -608,7 +638,7 @@ You can install [the fd-find package](https://www.freshports.org/sysutils/fd) fr
 pkg install fd-find
 ```
 
-### From NPM
+### From npm
 
 On linux and macOS, you can install the [fd-find](https://npm.im/fd-find) package:
 
@@ -622,7 +652,9 @@ With Rust's package manager [cargo](https://github.com/rust-lang/cargo), you can
 ```
 cargo install fd-find
 ```
-Note that rust version *1.36.0* or later is required.
+Note that rust version *1.53.0* or later is required.
+
+`make` is also needed for the build.
 
 ### From binaries
 
@@ -647,6 +679,7 @@ cargo install --path .
 
 - [sharkdp](https://github.com/sharkdp)
 - [tmccombs](https://github.com/tmccombs)
+- [tavianator](https://github.com/tavianator)
 
 ## License
 
