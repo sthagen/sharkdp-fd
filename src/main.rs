@@ -38,7 +38,10 @@ use crate::regex_helper::{pattern_has_uppercase_char, pattern_matches_strings_wi
     not(windows),
     not(target_os = "android"),
     not(target_os = "macos"),
-    not(target_env = "musl")
+    not(target_os = "freebsd"),
+    not(target_env = "musl"),
+    not(target_arch = "riscv64"),
+    feature = "use-jemalloc"
 ))]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -259,10 +262,7 @@ fn construct_config(matches: clap::ArgMatches, pattern_regex: &str) -> Result<Co
         read_vcsignore: !(matches.is_present("no-ignore")
             || matches.is_present("rg-alias-hidden-ignore")
             || matches.is_present("no-ignore-vcs")),
-        read_parent_ignore: !(matches.is_present("no-ignore")
-            || matches.is_present("rg-alias-hidden-ignore")
-            || matches.is_present("no-ignore-vcs")
-            || matches.is_present("no-ignore-parent")),
+        read_parent_ignore: !matches.is_present("no-ignore-parent"),
         read_global_ignore: !(matches.is_present("no-ignore")
             || matches.is_present("rg-alias-hidden-ignore")
             || matches.is_present("no-global-ignore-file")),

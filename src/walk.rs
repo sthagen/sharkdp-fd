@@ -1,12 +1,13 @@
 use std::ffi::OsStr;
 use std::fs::{FileType, Metadata};
 use std::io;
+use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time;
+use std::time::{Duration, Instant};
 use std::{borrow::Cow, io::Write};
 
 use anyhow::{anyhow, Result};
@@ -23,6 +24,7 @@ use crate::filesystem;
 use crate::output;
 
 /// The receiver thread can either be buffering results or directly streaming to the console.
+#[derive(PartialEq)]
 enum ReceiverMode {
     /// Receiver is still buffering in order to sort the results, if the search finishes fast
     /// enough.
@@ -41,7 +43,7 @@ pub enum WorkerResult {
 /// Maximum size of the output buffer before flushing results to the console
 pub const MAX_BUFFER_LENGTH: usize = 1000;
 /// Default duration until output buffering switches to streaming.
-pub const DEFAULT_MAX_BUFFER_TIME: time::Duration = time::Duration::from_millis(100);
+pub const DEFAULT_MAX_BUFFER_TIME: Duration = Duration::from_millis(100);
 
 /// Recursively scan the given search path for files / pathnames matching the pattern.
 ///
@@ -70,7 +72,7 @@ pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Config>) -> R
     walker
         .hidden(config.ignore_hidden)
         .ignore(config.read_fdignore)
-        .parents(config.read_parent_ignore)
+        .parents(config.read_parent_ignore && (config.read_fdignore || config.read_vcsignore))
         .git_ignore(config.read_vcsignore)
         .git_global(config.read_vcsignore)
         .git_exclude(config.read_vcsignore)
@@ -132,11 +134,19 @@ pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Config>) -> R
 
     let parallel_walker = walker.threads(config.threads).build_parallel();
 
-    let wants_to_quit = Arc::new(AtomicBool::new(false));
+    // Flag for cleanly shutting down the parallel walk
+    let quit_flag = Arc::new(AtomicBool::new(false));
+    // Flag specifically for quitting due to ^C
+    let interrupt_flag = Arc::new(AtomicBool::new(false));
+
     if config.ls_colors.is_some() && config.command.is_none() {
-        let wq = Arc::clone(&wants_to_quit);
+        let quit_flag = Arc::clone(&quit_flag);
+        let interrupt_flag = Arc::clone(&interrupt_flag);
+
         ctrlc::set_handler(move || {
-            if wq.fetch_or(true, Ordering::Relaxed) {
+            quit_flag.store(true, Ordering::Relaxed);
+
+            if interrupt_flag.fetch_or(true, Ordering::Relaxed) {
                 // Ctrl-C has been pressed twice, exit NOW
                 ExitCode::KilledBySigint.exit();
             }
@@ -145,28 +155,198 @@ pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Config>) -> R
     }
 
     // Spawn the thread that receives all results through the channel.
-    let receiver_thread = spawn_receiver(&config, &wants_to_quit, rx);
+    let receiver_thread = spawn_receiver(&config, &quit_flag, &interrupt_flag, rx);
 
     // Spawn the sender threads.
-    spawn_senders(&config, &wants_to_quit, pattern, parallel_walker, tx);
+    spawn_senders(&config, &quit_flag, pattern, parallel_walker, tx);
 
     // Wait for the receiver thread to print out all results.
     let exit_code = receiver_thread.join().unwrap();
 
-    if wants_to_quit.load(Ordering::Relaxed) {
+    if interrupt_flag.load(Ordering::Relaxed) {
         Ok(ExitCode::KilledBySigint)
     } else {
         Ok(exit_code)
     }
 }
 
+/// Wrapper for the receiver thread's buffering behavior.
+struct ReceiverBuffer<W> {
+    /// The configuration.
+    config: Arc<Config>,
+    /// For shutting down the senders.
+    quit_flag: Arc<AtomicBool>,
+    /// The ^C notifier.
+    interrupt_flag: Arc<AtomicBool>,
+    /// Receiver for worker results.
+    rx: Receiver<WorkerResult>,
+    /// Standard output.
+    stdout: W,
+    /// The current buffer mode.
+    mode: ReceiverMode,
+    /// The deadline to switch to streaming mode.
+    deadline: Instant,
+    /// The buffer of quickly received paths.
+    buffer: Vec<PathBuf>,
+    /// Result count.
+    num_results: usize,
+}
+
+impl<W: Write> ReceiverBuffer<W> {
+    /// Create a new receiver buffer.
+    fn new(
+        config: Arc<Config>,
+        quit_flag: Arc<AtomicBool>,
+        interrupt_flag: Arc<AtomicBool>,
+        rx: Receiver<WorkerResult>,
+        stdout: W,
+    ) -> Self {
+        let max_buffer_time = config.max_buffer_time.unwrap_or(DEFAULT_MAX_BUFFER_TIME);
+        let deadline = Instant::now() + max_buffer_time;
+
+        Self {
+            config,
+            quit_flag,
+            interrupt_flag,
+            rx,
+            stdout,
+            mode: ReceiverMode::Buffering,
+            deadline,
+            buffer: Vec::with_capacity(MAX_BUFFER_LENGTH),
+            num_results: 0,
+        }
+    }
+
+    /// Process results until finished.
+    fn process(&mut self) -> ExitCode {
+        loop {
+            if let Err(ec) = self.poll() {
+                self.quit_flag.store(true, Ordering::Relaxed);
+                return ec;
+            }
+        }
+    }
+
+    /// Receive the next worker result.
+    fn recv(&self) -> Result<WorkerResult, RecvTimeoutError> {
+        match self.mode {
+            ReceiverMode::Buffering => {
+                // Wait at most until we should switch to streaming
+                let now = Instant::now();
+                self.deadline
+                    .checked_duration_since(now)
+                    .ok_or(RecvTimeoutError::Timeout)
+                    .and_then(|t| self.rx.recv_timeout(t))
+            }
+            ReceiverMode::Streaming => {
+                // Wait however long it takes for a result
+                Ok(self.rx.recv()?)
+            }
+        }
+    }
+
+    /// Wait for a result or state change.
+    fn poll(&mut self) -> Result<(), ExitCode> {
+        match self.recv() {
+            Ok(WorkerResult::Entry(path)) => {
+                if self.config.quiet {
+                    return Err(ExitCode::HasResults(true));
+                }
+
+                match self.mode {
+                    ReceiverMode::Buffering => {
+                        self.buffer.push(path);
+                        if self.buffer.len() > MAX_BUFFER_LENGTH {
+                            self.stream()?;
+                        }
+                    }
+                    ReceiverMode::Streaming => {
+                        self.print(&path)?;
+                        self.flush()?;
+                    }
+                }
+
+                self.num_results += 1;
+                if let Some(max_results) = self.config.max_results {
+                    if self.num_results >= max_results {
+                        return self.stop();
+                    }
+                }
+            }
+            Ok(WorkerResult::Error(err)) => {
+                if self.config.show_filesystem_errors {
+                    print_error(err.to_string());
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                self.stream()?;
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return self.stop();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Output a path.
+    fn print(&mut self, path: &Path) -> Result<(), ExitCode> {
+        output::print_entry(&mut self.stdout, path, &self.config);
+
+        if self.interrupt_flag.load(Ordering::Relaxed) {
+            // Ignore any errors on flush, because we're about to exit anyway
+            let _ = self.flush();
+            return Err(ExitCode::KilledBySigint);
+        }
+
+        Ok(())
+    }
+
+    /// Switch ourselves into streaming mode.
+    fn stream(&mut self) -> Result<(), ExitCode> {
+        self.mode = ReceiverMode::Streaming;
+
+        let buffer = mem::take(&mut self.buffer);
+        for path in buffer {
+            self.print(&path)?;
+        }
+
+        self.flush()
+    }
+
+    /// Stop looping.
+    fn stop(&mut self) -> Result<(), ExitCode> {
+        if self.mode == ReceiverMode::Buffering {
+            self.buffer.sort();
+            self.stream()?;
+        }
+
+        if self.config.quiet {
+            Err(ExitCode::HasResults(self.num_results > 0))
+        } else {
+            Err(ExitCode::Success)
+        }
+    }
+
+    /// Flush stdout if necessary.
+    fn flush(&mut self) -> Result<(), ExitCode> {
+        if self.config.interactive_terminal && self.stdout.flush().is_err() {
+            // Probably a broken pipe. Exit gracefully.
+            return Err(ExitCode::GeneralError);
+        }
+        Ok(())
+    }
+}
+
 fn spawn_receiver(
     config: &Arc<Config>,
-    wants_to_quit: &Arc<AtomicBool>,
+    quit_flag: &Arc<AtomicBool>,
+    interrupt_flag: &Arc<AtomicBool>,
     rx: Receiver<WorkerResult>,
 ) -> thread::JoinHandle<ExitCode> {
     let config = Arc::clone(config);
-    let wants_to_quit = Arc::clone(wants_to_quit);
+    let quit_flag = Arc::clone(quit_flag);
+    let interrupt_flag = Arc::clone(interrupt_flag);
 
     let show_filesystem_errors = config.show_filesystem_errors;
     let threads = config.threads;
@@ -218,90 +398,12 @@ fn spawn_receiver(
                 merge_exitcodes(exit_codes)
             }
         } else {
-            let start = time::Instant::now();
-
-            // Start in buffering mode
-            let mut mode = ReceiverMode::Buffering;
-
-            // Maximum time to wait before we start streaming to the console.
-            let max_buffer_time = config.max_buffer_time.unwrap_or(DEFAULT_MAX_BUFFER_TIME);
-
             let stdout = io::stdout();
             let stdout = stdout.lock();
-            let mut stdout = io::BufWriter::new(stdout);
+            let stdout = io::BufWriter::new(stdout);
 
-            let mut num_results = 0;
-            let is_interactive = config.interactive_terminal;
-            let mut buffer = Vec::with_capacity(MAX_BUFFER_LENGTH);
-            for worker_result in rx {
-                match worker_result {
-                    WorkerResult::Entry(path) => {
-                        if config.quiet {
-                            return ExitCode::HasResults(true);
-                        }
-
-                        match mode {
-                            ReceiverMode::Buffering => {
-                                buffer.push(path);
-
-                                // Have we reached the maximum buffer size or maximum buffering time?
-                                if buffer.len() > MAX_BUFFER_LENGTH
-                                    || start.elapsed() > max_buffer_time
-                                {
-                                    // Flush the buffer
-                                    for path in &buffer {
-                                        output::print_entry(
-                                            &mut stdout,
-                                            path,
-                                            &config,
-                                            &wants_to_quit,
-                                        );
-                                    }
-                                    buffer.clear();
-                                    if is_interactive && stdout.flush().is_err() {
-                                        // Probably a broken pipe. Exit gracefully.
-                                        return ExitCode::GeneralError;
-                                    }
-                                    // Start streaming
-                                    mode = ReceiverMode::Streaming;
-                                }
-                            }
-                            ReceiverMode::Streaming => {
-                                output::print_entry(&mut stdout, &path, &config, &wants_to_quit);
-                                if is_interactive && stdout.flush().is_err() {
-                                    // Probably a broken pipe. Exit gracefully.
-                                    return ExitCode::GeneralError;
-                                }
-                            }
-                        }
-
-                        num_results += 1;
-                        if let Some(max_results) = config.max_results {
-                            if num_results >= max_results {
-                                break;
-                            }
-                        }
-                    }
-                    WorkerResult::Error(err) => {
-                        if show_filesystem_errors {
-                            print_error(err.to_string());
-                        }
-                    }
-                }
-            }
-
-            // If we have finished fast enough (faster than max_buffer_time), we haven't streamed
-            // anything to the console, yet. In this case, sort the results and print them:
-            buffer.sort();
-            for value in buffer {
-                output::print_entry(&mut stdout, &value, &config, &wants_to_quit);
-            }
-
-            if config.quiet {
-                ExitCode::HasResults(false)
-            } else {
-                ExitCode::Success
-            }
+            let mut rxbuffer = ReceiverBuffer::new(config, quit_flag, interrupt_flag, rx, stdout);
+            rxbuffer.process()
         }
     })
 }
@@ -364,7 +466,7 @@ impl DirEntry {
 
 fn spawn_senders(
     config: &Arc<Config>,
-    wants_to_quit: &Arc<AtomicBool>,
+    quit_flag: &Arc<AtomicBool>,
     pattern: Arc<Regex>,
     parallel_walker: ignore::WalkParallel,
     tx: Sender<WorkerResult>,
@@ -373,10 +475,10 @@ fn spawn_senders(
         let config = Arc::clone(config);
         let pattern = Arc::clone(&pattern);
         let tx_thread = tx.clone();
-        let wants_to_quit = Arc::clone(wants_to_quit);
+        let quit_flag = Arc::clone(quit_flag);
 
         Box::new(move |entry_o| {
-            if wants_to_quit.load(Ordering::Relaxed) {
+            if quit_flag.load(Ordering::Relaxed) {
                 return ignore::WalkState::Quit;
             }
 
