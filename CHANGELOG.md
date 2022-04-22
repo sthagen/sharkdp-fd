@@ -13,8 +13,13 @@
 
 
 ## Other
+- Added installation instructions for RHEL8, see #989 (@ethsol)
 
+# v8.3.2
 
+## Bugfixes
+
+- Invalid absolute path on windows when searching from the drive root, see #931 and #936 (@gbarta)
 
 
 # v8.3.1

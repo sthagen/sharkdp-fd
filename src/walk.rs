@@ -104,10 +104,7 @@ pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Config>) -> R
             match result {
                 Some(ignore::Error::Partial(_)) => (),
                 Some(err) => {
-                    print_error(format!(
-                        "Malformed pattern in global ignore file. {}.",
-                        err.to_string()
-                    ));
+                    print_error(format!("Malformed pattern in global ignore file. {}.", err));
                 }
                 None => (),
             }
@@ -119,10 +116,7 @@ pub fn scan(path_vec: &[PathBuf], pattern: Arc<Regex>, config: Arc<Config>) -> R
         match result {
             Some(ignore::Error::Partial(_)) => (),
             Some(err) => {
-                print_error(format!(
-                    "Malformed pattern in custom ignore file. {}.",
-                    err.to_string()
-                ));
+                print_error(format!("Malformed pattern in custom ignore file. {}.", err));
             }
             None => (),
         }
@@ -356,13 +350,7 @@ fn spawn_receiver(
         // This will be set to `Some` if the `--exec` argument was supplied.
         if let Some(ref cmd) = config.command {
             if cmd.in_batch_mode() {
-                exec::batch(
-                    rx,
-                    cmd,
-                    show_filesystem_errors,
-                    enable_output_buffering,
-                    config.batch_size,
-                )
+                exec::batch(rx, cmd, show_filesystem_errors, config.batch_size)
             } else {
                 let shared_rx = Arc::new(Mutex::new(rx));
 
