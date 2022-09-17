@@ -2,10 +2,12 @@
 
 ## Features
 
+- `--type executable`/`-t` now works on Windows, see #1051 and #1061
 
 ## Bugfixes
 
 - fd returns an error when current working directory does not exist while a search path is specified, see #1072 (@vijfhoek)
+- Improved "command not found" error message, see #1083 and #1109 (@themkat)
 
 
 ## Changes
@@ -13,6 +15,7 @@
 
 ## Other
 
+- Added link back to GitHub in man page, see #1086 (@scottchiefbaker)
 
 
 # v8.4.0
