@@ -40,7 +40,7 @@ use crate::regex_helper::{pattern_has_uppercase_char, pattern_matches_strings_wi
     not(target_os = "android"),
     not(target_os = "macos"),
     not(target_os = "freebsd"),
-    not(target_env = "musl"),
+    not(all(target_env = "musl", target_pointer_width = "32")),
     not(target_arch = "riscv64"),
     feature = "use-jemalloc"
 ))]
@@ -385,7 +385,7 @@ fn construct_config(matches: clap::ArgMatches, pattern_regex: &str) -> Result<Co
             }),
         strip_cwd_prefix: (!matches.is_present("path")
             && !matches.is_present("search-path")
-            && (interactive_terminal || matches.is_present("strip-cwd-prefix"))),
+            && (!matches.is_present("null_separator") || matches.is_present("strip-cwd-prefix"))),
     })
 }
 
