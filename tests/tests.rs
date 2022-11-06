@@ -1479,7 +1479,12 @@ fn test_exec_batch() {
 
         te.assert_failure_with_error(
             &["foo", "--exec-batch", "echo", "{}", "{}"],
-            "[fd error]: Only one placeholder allowed for batch commands",
+            "error: Only one placeholder allowed for batch commands\n\
+            \n\
+            Usage: fd [OPTIONS] [pattern] [path]...\n\
+            \n\
+            For more information try '--help'\n\
+            ",
         );
 
         te.assert_failure_with_error(
@@ -1494,8 +1499,15 @@ fn test_exec_batch() {
 
         te.assert_failure_with_error(
             &["foo", "--exec-batch", "echo {}"],
-            "[fd error]: First argument of exec-batch is expected to be a fixed executable",
+            "error: First argument of exec-batch is expected to be a fixed executable\n\
+            \n\
+            Usage: fd [OPTIONS] [pattern] [path]...\n\
+            \n\
+            For more information try '--help'\n\
+            ",
         );
+
+        te.assert_failure_with_error(&["a.foo", "--exec-batch", "bash", "-c", "exit 1"], "");
     }
 }
 
@@ -1550,6 +1562,20 @@ fn test_exec_batch_multi() {
                 "directory_foo"
             ],
         ]
+    );
+
+    te.assert_failure_with_error(
+        &[
+            "a.foo",
+            "--exec-batch",
+            "echo",
+            ";",
+            "--exec-batch",
+            "bash",
+            "-c",
+            "exit 1",
+        ],
+        "",
     );
 }
 
@@ -1893,6 +1919,50 @@ fn test_modified_absolute() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn test_owner_ignore_all() {
+    let te = TestEnv::new(DEFAULT_DIRS, DEFAULT_FILES);
+    te.assert_output(&["--owner", ":", "a.foo"], "a.foo");
+    te.assert_output(&["--owner", "", "a.foo"], "a.foo");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_owner_current_user() {
+    let te = TestEnv::new(DEFAULT_DIRS, DEFAULT_FILES);
+    let uid = users::get_current_uid();
+    te.assert_output(&["--owner", &uid.to_string(), "a.foo"], "a.foo");
+    if let Some(username) = users::get_current_username().map(|u| u.into_string().unwrap()) {
+        te.assert_output(&["--owner", &username, "a.foo"], "a.foo");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn test_owner_current_group() {
+    let te = TestEnv::new(DEFAULT_DIRS, DEFAULT_FILES);
+    let gid = users::get_current_gid();
+    te.assert_output(&["--owner", &format!(":{}", gid), "a.foo"], "a.foo");
+    if let Some(groupname) = users::get_current_groupname().map(|u| u.into_string().unwrap()) {
+        te.assert_output(&["--owner", &format!(":{}", groupname), "a.foo"], "a.foo");
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn test_owner_root() {
+    // This test assumes the current user isn't root
+    if users::get_current_uid() == 0 || users::get_current_gid() == 0 {
+        return;
+    }
+    let te = TestEnv::new(DEFAULT_DIRS, DEFAULT_FILES);
+    te.assert_output(&["--owner", "root", "a.foo"], "");
+    te.assert_output(&["--owner", "0", "a.foo"], "");
+    te.assert_output(&["--owner", ":root", "a.foo"], "");
+    te.assert_output(&["--owner", ":0", "a.foo"], "");
+}
+
 #[test]
 fn test_custom_path_separator() {
     let te = TestEnv::new(DEFAULT_DIRS, DEFAULT_FILES);
@@ -2038,6 +2108,14 @@ fn test_list_details() {
 
     // Make sure we can execute 'fd --list-details' without any errors.
     te.assert_success_and_get_output(".", &["--list-details"]);
+}
+
+#[test]
+fn test_single_and_multithreaded_execution() {
+    let te = TestEnv::new(DEFAULT_DIRS, DEFAULT_FILES);
+
+    te.assert_output(&["--threads=1", "a.foo"], "a.foo");
+    te.assert_output(&["--threads=16", "a.foo"], "a.foo");
 }
 
 /// Make sure that fd fails if numeric arguments can not be parsed

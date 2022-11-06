@@ -207,7 +207,7 @@ Here, `{}` is a placeholder for the search result. `{.}` is the same, without th
 See below for more details on the placeholder syntax.
 
 The terminal output of commands run from parallel threads using `-x` will not be interlaced or garbled,
-so `fd -x` can be used to rudimentarily parallelize a task run over many files. 
+so `fd -x` can be used to rudimentarily parallelize a task run over many files.
 An example of this is calculating the checksum of each individual file within a directory.
 ```
 fd -tf -x md5sum > file_checksums.txt
@@ -295,39 +295,37 @@ This is the output of `fd -h`. To see the full set of command-line options, use 
 also includes a much more detailed help text.
 
 ```
-USAGE:
-    fd [FLAGS/OPTIONS] [<pattern>] [<path>...]
+Usage: fd [OPTIONS] [pattern] [path]...
 
-FLAGS:
-    -H, --hidden            Search hidden files and directories
-    -I, --no-ignore         Do not respect .(git|fd)ignore files
-    -s, --case-sensitive    Case-sensitive search (default: smart case)
-    -i, --ignore-case       Case-insensitive search (default: smart case)
-    -g, --glob              Glob-based search (default: regular expression)
-    -a, --absolute-path     Show absolute instead of relative paths
-    -l, --list-details      Use a long listing format with file metadata
-    -L, --follow            Follow symbolic links
-    -p, --full-path         Search full abs. path (default: filename only)
-    -h, --help              Prints help information
-    -V, --version           Prints version information
+Arguments:
+  [pattern]  the search pattern (a regular expression, unless '--glob' is used; optional)
+  [path]...  the root directories for the filesystem search (optional)
 
-OPTIONS:
-    -d, --max-depth <depth>            Set maximum search depth (default: none)
-    -t, --type <filetype>...           Filter by type: file (f), directory (d), symlink (l),
-                                       executable (x), empty (e), socket (s), pipe (p)
-    -e, --extension <ext>...           Filter by file extension
-    -x, --exec <cmd>                   Execute a command for each search result
-    -X, --exec-batch <cmd>             Execute a command with all search results at once
-    -E, --exclude <pattern>...         Exclude entries that match the given glob pattern
-    -c, --color <when>                 When to use colors: never, *auto*, always
-    -S, --size <size>...               Limit results based on the size of files
-        --changed-within <date|dur>    Filter by file modification time (newer than)
-        --changed-before <date|dur>    Filter by file modification time (older than)
-    -o, --owner <user:group>           Filter by owning user and/or group
-
-ARGS:
-    <pattern>    the search pattern (a regular expression, unless '--glob' is used; optional)
-    <path>...    the root directory for the filesystem search (optional)
+Options:
+  -H, --hidden                     Search hidden files and directories
+  -I, --no-ignore                  Do not respect .(git|fd)ignore files
+  -s, --case-sensitive             Case-sensitive search (default: smart case)
+  -i, --ignore-case                Case-insensitive search (default: smart case)
+  -g, --glob                       Glob-based search (default: regular expression)
+  -a, --absolute-path              Show absolute instead of relative paths
+  -l, --list-details               Use a long listing format with file metadata
+  -L, --follow                     Follow symbolic links
+  -p, --full-path                  Search full abs. path (default: filename only)
+  -d, --max-depth <depth>          Set maximum search depth (default: none)
+  -E, --exclude <pattern>          Exclude entries that match the given glob pattern
+  -t, --type <filetype>            Filter by type: file (f), directory (d), symlink (l),
+                                   executable (x), empty (e), socket (s), pipe (p)
+  -e, --extension <ext>            Filter by file extension
+  -S, --size <size>                Limit results based on the size of files
+      --changed-within <date|dur>  Filter by file modification time (newer than)
+      --changed-before <date|dur>  Filter by file modification time (older than)
+  -o, --owner <user:group>         Filter by owning user and/or group
+  -x, --exec <cmd>...              Execute a command for each search result
+  -X, --exec-batch <cmd>...        Execute a command with all search results at once
+  -c, --color <when>               When to use colors [default: auto] [possible values: auto,
+                                   always, never]
+  -h, --help                       Print help information (use `--help` for more detail)
+  -V, --version                    Print version information
 ```
 
 ## Benchmark
@@ -542,7 +540,7 @@ Make sure that `$HOME/.local/bin` is in your `$PATH`.
 If you use an older version of Ubuntu, you can download the latest `.deb` package from the
 [release page](https://github.com/sharkdp/fd/releases) and install it via:
 ``` bash
-sudo dpkg -i fd_8.4.0_amd64.deb  # adapt version number and architecture
+sudo dpkg -i fd_8.5.2_amd64.deb  # adapt version number and architecture
 ```
 
 ### On Debian
@@ -612,7 +610,7 @@ chown root:root fd.1.gz
 sudo cp fd.1.gz /usr/share/man/man1
 sudo cp autocomplete/fd.bash /usr/share/bash-completion/completions/fd
 source /usr/share/bash-completion/completions/fd
-fd 
+fd
 ```
 
 ### On macOS
@@ -676,7 +674,7 @@ With Rust's package manager [cargo](https://github.com/rust-lang/cargo), you can
 ```
 cargo install fd-find
 ```
-Note that rust version *1.57.0* or later is required.
+Note that rust version *1.60.0* or later is required.
 
 `make` is also needed for the build.
 

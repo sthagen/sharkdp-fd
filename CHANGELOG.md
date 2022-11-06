@@ -1,4 +1,18 @@
-# Upcoming release
+# v8.5.2
+
+## Bugfixes
+
+- Fix --owner option value parsing, see #1163 and #1164 (@tmccombs)
+
+
+# v8.5.1
+
+## Bugfixes
+
+- Fix --threads/-j option value parsing, see #1160 and #1162 (@sharkdp)
+
+
+# v8.5.0
 
 ## Features
 
@@ -10,18 +24,28 @@
   had before 8.3.0, i.e. there will be no leading `./` prefixes, unless `--exec`/`-x`,
   `--exec-batch`/`-X`, or `--print0`/`-0` are used. `--strip-cwd-prefix` can be used to strip that
   prefix in those cases. See #1046, #1115, and #1121 (@tavianator)
+- `fd` could previously crash with a panic due to a race condition in Rusts standard library
+  (see https://github.com/rust-lang/rust/issues/39364). This has been fixed by switching to a different
+  message passing implementation, see #1060 and #1146 (@tavianator)
+- `fd`s memory usage will not grow unboundedly on huge directory trees, see #1146 (@tavianator)
 - fd returns an error when current working directory does not exist while a search path is
   specified, see #1072 (@vijfhoek)
 - Improved "command not found" error message, see #1083 and #1109 (@themkat)
+- Preserve command exit codes when using `--exec-batch`, see #1136 and #1137 (@amesgen)
 
 ## Changes
 
 - No leading `./` prefix for non-interactive results, see above.
+- fd now colorizes paths in parallel, significantly improving performance, see #1148 (@tavianator)
+- fd can now avoid `stat` syscalls even when colorizing paths, as long as the color scheme doesn't
+  require metadata, see #1148 (@tavianator)
+- The statically linked `musl` versions of `fd` now use `jmalloc`, leading to a significant performance
+  improvement, see #1062 (@tavianator)
 
 ## Other
 
 - Added link back to GitHub in man page and `--help` text, see #1086 (@scottchiefbaker)
-
+- Major update in how `fd` handles command line options internally, see #1067 (@tmccombs)
 
 # v8.4.0
 
