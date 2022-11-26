@@ -1,3 +1,33 @@
+# Upcoming release
+
+## Features
+
+- New `--and <pattern>` option to add additional patterns that must also be matched. See #315
+  and #1139 (@Uthar)
+- Added `--changed-after` as alias for `--changed-within`, to have a name consistent with `--changed-before`.
+
+
+## Changes
+
+- Breaking: On Unix-like systems, `--type executable` now additionally checks if
+  the file is executable by the current user, see #1106 and #1169 (@ptipiak)
+
+
+## Bugfixes
+
+- Use fd instead of fd.exe for Powershell completions (when completions are generated on windows)
+
+
+## Other
+
+
+# v8.5.3
+
+## Bugfixes
+
+- Fix completion generation to not include full path of fd command
+- Fix build error if completions feature is disabled
+
 # v8.5.2
 
 ## Bugfixes

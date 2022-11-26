@@ -144,6 +144,18 @@ pub struct Opts {
     )]
     pub fixed_strings: bool,
 
+    /// Additional search patterns that need to be matched
+    #[arg(
+        long = "and",
+        value_name = "pattern",
+        long_help = "Add additional required search patterns, all of which must be matched. Multiple \
+                     additional patterns can be specified. The patterns are regular expressions, \
+                     unless '--glob' or '--fixed-strings' is used.",
+        hide_short_help = true,
+        allow_hyphen_values = true
+    )]
+    pub exprs: Option<Vec<String>>,
+
     /// Show absolute instead of relative paths
     #[arg(
         long,
@@ -335,8 +347,11 @@ pub struct Opts {
         long,
         alias("change-newer-than"),
         alias("newer"),
+        alias("changed-after"),
         value_name = "date|dur",
-        long_help = "Filter results based on the file modification time. The argument can be provided \
+        long_help = "Filter results based on the file modification time. \
+                     Files with modification times greater than the argument are returned. \
+                     The argument can be provided \
                      as a specific point in time (YYYY-MM-DD HH:MM:SS) or as a duration (10h, 1d, 35min). \
                      If the time is not specified, it defaults to 00:00:00. \
                      '--change-newer-than' or '--newer' can be used as aliases.\n\
@@ -353,7 +368,9 @@ pub struct Opts {
         alias("change-older-than"),
         alias("older"),
         value_name = "date|dur",
-        long_help = "Filter results based on the file modification time. The argument can be provided \
+        long_help = "Filter results based on the file modification time. \
+                     Files with modification times less than the argument are returned. \
+                     The argument can be provided \
                      as a specific point in time (YYYY-MM-DD HH:MM:SS) or as a duration (10h, 1d, 35min). \
                      '--change-older-than' or '--older' can be used as aliases.\n\
                      Examples:\n    \
@@ -643,6 +660,7 @@ pub enum FileType {
     Directory,
     #[value(alias = "l")]
     Symlink,
+    /// A file which is executable by the current effective user
     #[value(alias = "x")]
     Executable,
     #[value(alias = "e")]
