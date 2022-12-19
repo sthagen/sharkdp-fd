@@ -2,6 +2,20 @@
 
 ## Features
 
+## Bugfixes
+
+- Fix logic for when to use global ignore file. There was a bug where the only case where the
+  global ignore file wasn't processed was if `--no-ignore` was passed, but neither `--unrestricted`
+  nor `--no-global-ignore-file` is passed. See #1209
+
+## Changes
+
+## Other
+
+# v8.6.0
+
+## Features
+
 - New `--and <pattern>` option to add additional patterns that must also be matched. See #315
   and #1139 (@Uthar)
 - Added `--changed-after` as alias for `--changed-within`, to have a name consistent with `--changed-before`.
