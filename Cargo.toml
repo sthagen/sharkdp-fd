@@ -18,6 +18,7 @@ readme = "README.md"
 repository = "https://github.com/sharkdp/fd"
 version = "8.6.0"
 edition= "2021"
+rust-version = "1.64.0"
 
 [badges.appveyor]
 repository = "sharkdp/fd"
@@ -38,7 +39,7 @@ argmax = "0.3.1"
 atty = "0.2"
 ignore = "0.4.3"
 num_cpus = "1.15"
-regex = "1.7.0"
+regex = "1.7.1"
 regex-syntax = "0.6"
 ctrlc = "3.2"
 humantime = "2.1"
@@ -52,7 +53,7 @@ clap_complete = {version = "4.0.6", optional = true}
 faccess = "0.2.4"
 
 [dependencies.clap]
-version = "4.0.22"
+version = "4.1.1"
 features = ["suggestions", "color", "wrap_help", "cargo", "unstable-grouped", "derive"]
 
 [dependencies.chrono]
@@ -67,7 +68,7 @@ features = ["nu-ansi-term"]
 
 [target.'cfg(unix)'.dependencies]
 users = "0.11.0"
-nix = { version = "0.25.0", default-features = false, features = ["signal"] }
+nix = { version = "0.26.2", default-features = false, features = ["signal"] }
 
 [target.'cfg(all(unix, not(target_os = "redox")))'.dependencies]
 libc = "0.2"
