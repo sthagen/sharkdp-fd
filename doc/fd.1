@@ -380,9 +380,16 @@ parent directory
 path without file extension
 .IP {/.}
 basename without file extension
+.IP {{
+literal '{' (an escape sequence)
+.IP }}
+literal '}' (an escape sequence)
 .RE
 
 If no placeholder is present, an implicit "{}" at the end is assumed.
+
+Notice that you can use "{{" and "}}" to escape "{" and "}" respectively, which is especially
+useful if you need to include the literal text of one of the above placeholders.
 
 Examples:
 
