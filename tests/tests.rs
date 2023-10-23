@@ -2556,3 +2556,37 @@ fn test_invalid_cwd() {
         panic!("{:?}", output);
     }
 }
+
+/// Test behavior of .git directory with various flags
+#[test]
+fn test_git_dir() {
+    let te = TestEnv::new(
+        &[".git/one", "other_dir/.git", "nested/dir/.git"],
+        &[
+            ".git/one/foo.a",
+            ".git/.foo",
+            ".git/a.foo",
+            "other_dir/.git/foo1",
+            "nested/dir/.git/foo2",
+        ],
+    );
+
+    te.assert_output(&["--hidden", "foo"], "");
+    te.assert_output(&["--no-ignore", "foo"], "");
+    te.assert_output(
+        &["--hidden", "--no-ignore", "foo"],
+        ".git/one/foo.a
+         .git/.foo
+         .git/a.foo
+         other_dir/.git/foo1
+         nested/dir/.git/foo2",
+    );
+    te.assert_output(
+        &["--hidden", "--no-ignore-vcs", "foo"],
+        ".git/one/foo.a
+         .git/.foo
+         .git/a.foo
+         other_dir/.git/foo1
+         nested/dir/.git/foo2",
+    );
+}

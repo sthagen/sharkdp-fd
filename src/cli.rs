@@ -32,6 +32,8 @@ pub struct Opts {
     /// Include hidden directories and files in the search results (default:
     /// hidden files and directories are skipped). Files and directories are
     /// considered to be hidden if their name starts with a `.` sign (dot).
+    /// Any files or directories that are ignored due to the rules described by
+    /// --no-ignore are still ignored unless otherwise specified.
     /// The flag can be overridden with --no-hidden.
     #[arg(
         long,
@@ -46,7 +48,8 @@ pub struct Opts {
     no_hidden: (),
 
     /// Show search results from files and directories that would otherwise be
-    /// ignored by '.gitignore', '.ignore', '.fdignore', or the global ignore file.
+    /// ignored by '.gitignore', '.ignore', '.fdignore', the global ignore file,
+    /// or the default rule tthat excludes .git/.
     /// The flag can be overridden with --ignore.
     #[arg(
         long,
@@ -60,8 +63,9 @@ pub struct Opts {
     #[arg(long, overrides_with = "no_ignore", hide = true, action = ArgAction::SetTrue)]
     ignore: (),
 
-    ///Show search results from files and directories that would otherwise be
-    /// ignored by '.gitignore' files. The flag can be overridden with --ignore-vcs.
+    ///Show search results from '.git/' folders and files and directories that
+    ///would otherwise be ignored by '.gitignore' files.
+    ///The flag can be overridden with --ignore-vcs.
     #[arg(
         long,
         hide_short_help = true,
@@ -800,6 +804,7 @@ impl clap::Args for Exec {
                 .help("Execute a command for each search result")
                 .long_help(
                     "Execute a command for each search result in parallel (use --threads=1 for sequential command execution). \
+                     There is no guarantee of the order commands are executed in, and the order should not be depended upon. \
                      All positional arguments following --exec are considered to be arguments to the command - not to fd. \
                      It is therefore recommended to place the '-x'/'--exec' option last.\n\
                      The following placeholders are substituted before the command is executed:\n  \
@@ -834,6 +839,7 @@ impl clap::Args for Exec {
                 .help("Execute a command with all search results at once")
                 .long_help(
                     "Execute the given command once, with all search results as arguments.\n\
+                     The order of the arguments is non-deterministic, and should not be relied upon.\n\
                      One of the following placeholders is substituted before the command is executed:\n  \
                        '{}':   path (of all search results)\n  \
                        '{/}':  basename\n  \
