@@ -35,10 +35,10 @@ version_check = "0.9"
 
 [dependencies]
 aho-corasick = "1.0"
-nu-ansi-term = "0.49"
+nu-ansi-term = "0.50"
 argmax = "0.3.1"
-ignore = "0.4.21"
-regex = "1.9.6"
+ignore = "0.4.22"
+regex = "1.10.3"
 regex-syntax = "0.8"
 ctrlc = "3.2"
 humantime = "2.1"
@@ -46,8 +46,8 @@ globset = "0.4"
 anyhow = "1.0"
 etcetera = "0.8"
 normpath = "1.1.1"
-crossbeam-channel = "0.5.10"
-clap_complete = {version = "4.4.6", optional = true}
+crossbeam-channel = "0.5.11"
+clap_complete = {version = "4.4.9", optional = true}
 faccess = "0.2.4"
 
 [dependencies.clap]
