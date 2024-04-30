@@ -642,7 +642,7 @@ impl Opts {
         } else if !self.search_path.is_empty() {
             &self.search_path
         } else {
-            let current_directory = Path::new(".");
+            let current_directory = Path::new("./");
             ensure_current_directory_exists(current_directory)?;
             return Ok(vec![self.normalize_path(current_directory)]);
         };
@@ -665,6 +665,9 @@ impl Opts {
     fn normalize_path(&self, path: &Path) -> PathBuf {
         if self.absolute_path {
             filesystem::absolute_path(path.normalize().unwrap().as_path()).unwrap()
+        } else if path == Path::new(".") {
+            // Change "." to "./" as a workaround for https://github.com/BurntSushi/ripgrep/pull/2711
+            PathBuf::from("./")
         } else {
             path.to_path_buf()
         }
