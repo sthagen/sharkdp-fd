@@ -55,7 +55,7 @@ version = "4.4.13"
 features = ["suggestions", "color", "wrap_help", "cargo", "derive"]
 
 [dependencies.chrono]
-version = "0.4.34"
+version = "0.4.38"
 default-features = false
 features = ["std", "clock"]
 
@@ -65,7 +65,7 @@ default-features = false
 features = ["nu-ansi-term"]
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.27.1", default-features = false, features = ["signal", "user"] }
+nix = { version = "0.28.0", default-features = false, features = ["signal", "user"] }
 
 [target.'cfg(all(unix, not(target_os = "redox")))'.dependencies]
 libc = "0.2"
