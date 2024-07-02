@@ -38,7 +38,7 @@ aho-corasick = "1.1"
 nu-ansi-term = "0.50"
 argmax = "0.3.1"
 ignore = "0.4.22"
-regex = "1.10.3"
+regex = "1.10.5"
 regex-syntax = "0.8"
 ctrlc = "3.2"
 humantime = "2.1"
@@ -47,11 +47,11 @@ anyhow = "1.0"
 etcetera = "0.8"
 normpath = "1.1.1"
 crossbeam-channel = "0.5.13"
-clap_complete = {version = "4.4.9", optional = true}
+clap_complete = {version = "4.5.7", optional = true}
 faccess = "0.2.4"
 
 [dependencies.clap]
-version = "4.4.13"
+version = "4.5.8"
 features = ["suggestions", "color", "wrap_help", "cargo", "derive"]
 
 [dependencies.chrono]
@@ -60,7 +60,7 @@ default-features = false
 features = ["std", "clock"]
 
 [dependencies.lscolors]
-version = "0.17"
+version = "0.18"
 default-features = false
 features = ["nu-ansi-term"]
 
