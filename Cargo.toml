@@ -38,7 +38,7 @@ aho-corasick = "1.1"
 nu-ansi-term = "0.50"
 argmax = "0.3.1"
 ignore = "0.4.23"
-regex = "1.10.5"
+regex = "1.11.1"
 regex-syntax = "0.8"
 ctrlc = "3.2"
 humantime = "2.1"
@@ -60,7 +60,7 @@ default-features = false
 features = ["std", "clock"]
 
 [dependencies.lscolors]
-version = "0.19"
+version = "0.20"
 default-features = false
 features = ["nu-ansi-term"]
 
@@ -78,7 +78,7 @@ jemallocator = {version = "0.5.4", optional = true}
 
 [dev-dependencies]
 diff = "0.1"
-tempfile = "3.10"
+tempfile = "3.13"
 filetime = "0.2"
 test-case = "3.3"
 
