@@ -47,12 +47,12 @@ anyhow = "1.0"
 etcetera = "0.10"
 normpath = "1.1.1"
 crossbeam-channel = "0.5.15"
-clap_complete = {version = "4.5.47", optional = true}
+clap_complete = {version = "4.5.52", optional = true}
 faccess = "0.2.4"
-jiff = "0.2.5"
+jiff = "0.2.14"
 
 [dependencies.clap]
-version = "4.5.35"
+version = "4.5.39"
 features = ["suggestions", "color", "wrap_help", "cargo", "derive"]
 
 [dependencies.lscolors]
@@ -74,7 +74,7 @@ tikv-jemallocator = {version = "0.6.0", optional = true}
 
 [dev-dependencies]
 diff = "0.1"
-tempfile = "3.19"
+tempfile = "3.20"
 filetime = "0.2"
 test-case = "3.3"
 
