@@ -311,7 +311,7 @@ This is the output of `fd -h`. To see the full set of command-line options, use 
 also includes a much more detailed help text.
 
 ```
-Usage: fd [OPTIONS] [pattern [path...]]
+Usage: fd [OPTIONS] [pattern [path]...]
 
 Arguments:
   [pattern]  the search pattern (a regular expression, unless '--glob' is used; optional)
@@ -344,7 +344,7 @@ Options:
                                    always, never]
       --hyperlink[=<when>]         Add hyperlinks to output paths [default: never] [possible
                                    values: auto, always, never]
-  -C, --base-directory <path>      Change the search path to <path>
+      --ignore-contain <name>      Ignore directories containing the named entry
   -h, --help                       Print help (see more with '--help')
   -V, --version                    Print version
 ```
