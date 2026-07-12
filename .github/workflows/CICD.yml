@@ -279,7 +279,7 @@ jobs:
         echo "IS_RELEASE=${IS_RELEASE}" >> $GITHUB_OUTPUT
 
     - name: "Attest artifacts"
-      uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4
+      uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4
       if: steps.is-release.outputs.IS_RELEASE
       with:
         subject-path: |
@@ -287,7 +287,7 @@ jobs:
           ${{ steps.debian-package.outputs.DPKG_PATH }}
 
     - name: Publish archives and packages
-      uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+      uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
       if: steps.is-release.outputs.IS_RELEASE
       with:
         files: |
