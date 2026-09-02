@@ -1,4 +1,13 @@
-# Unreleased
+# Upcoming Release
+
+## Features
+-
+
+## Bugfixes
+- Don't incorrectly escape newlines in error messages, see #2104
+- Restore jemalloc as default allocator on supported systems
+
+# 10.5.0
 
 ## Features
 - Add `--ignore-parent` option to override `--no-ignore-parent`, see #1958 (@tmchow)
