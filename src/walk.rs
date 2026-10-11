@@ -483,25 +483,15 @@ impl WorkerState {
                 }
                 let entry = match entry {
                     Ok(e) => DirEntry::normal(e),
-                    Err(ignore::Error::WithPath {
-                        path,
-                        err: inner_err,
-                    }) if inner_err
-                        .io_error()
-                        .is_some_and(|io_error| io_error.kind() == io::ErrorKind::NotFound)
-                        && path
-                            .symlink_metadata()
-                            .ok()
-                            .is_some_and(|m| m.file_type().is_symlink()) =>
-                    {
-                        DirEntry::broken_symlink(path)
-                    }
-                    Err(err) => {
-                        return match tx.send(WorkerResult::Error(err)) {
-                            Ok(_) => WalkState::Continue,
-                            Err(_) => WalkState::Quit,
-                        };
-                    }
+                    Err(err) => match broken_symlink_from_err(err) {
+                        Ok(entry) => entry,
+                        Err(err) => {
+                            return match tx.send(WorkerResult::Error(err)) {
+                                Ok(_) => WalkState::Continue,
+                                Err(_) => WalkState::Quit,
+                            };
+                        }
+                    },
                 };
 
                 if let Some(min_depth) = config.min_depth
@@ -648,6 +638,49 @@ impl WorkerState {
             Ok(ExitCode::KilledBySigint)
         } else {
             Ok(exit_code)
+        }
+    }
+}
+
+/// If `err` is for a broken symlink, create a broken symlink DirEntry,
+/// otherwise, return the original error.
+fn broken_symlink_from_err(mut err: ignore::Error) -> Result<DirEntry, ignore::Error> {
+    use ignore::Error::*;
+    let mut depth = None;
+    let mut path = None;
+    let mut current = &mut err;
+    // Loop through the items in the chain, and extract the path and depth as we find them.
+    // Then once we get to the (terminal) io error, check that it is for a broken symlink.
+    loop {
+        match current {
+            WithPath { err, path: p } => {
+                path = Some(p);
+                current = err;
+            }
+            WithDepth { err, depth: d } => {
+                depth = Some(*d);
+                current = err;
+            }
+            Io(e) if e.kind() == io::ErrorKind::NotFound => {
+                if let Some(path) = path
+                    && path
+                        .symlink_metadata()
+                        .ok()
+                        .is_some_and(|m| m.file_type().is_symlink())
+                {
+                    // Since we no longer need the original error, we can take the PathBuf of the
+                    // path out of it.
+                    return Ok(DirEntry::broken_symlink(mem::take(path), depth));
+                } else {
+                    // This is pretty unlikely.
+                    return Err(err);
+                }
+            }
+            // We don't care about Loop because that won't happen
+            // for broken symlinks, and there are two paths involved
+            // and we don't care about WithLineNumber because that only applies
+            // to errors while parsing ignore files.
+            _ => return Err(err),
         }
     }
 }
